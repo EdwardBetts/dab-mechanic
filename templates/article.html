@@ -1,0 +1,70 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title></title>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.2.0/dist/css/bootstrap.min.css" rel="stylesheet" integrity="sha384-gH2yIJqKdNHPEq0n4Mqa/HGKIhSkIHeL5AyhkYV8i59U5AR6csBvApHHNl/vI1Bx" crossorigin="anonymous">
+<style>
+a.disambig { color: #ff8c00; }
+a.disambig-highlight { color: #ff8c00; border: 2px solid #ff8c00; }
+a.new { color: red; }
+
+#article {
+  left: 0;
+  width: 50%;
+}
+
+.card-highlight {
+  color: #000 !important;
+  background-color: #FFD580 !important;
+}
+
+</style>
+</head>
+
+<body>
+
+<div class="m-3 container-fluid">
+  <div class="row">
+  <div class="col-8">
+    <h1>{{ title }}</h1>
+    <div>{{ text | safe }}</div>
+  </div>
+  <div class="col-4">
+      {% for dab in dab_list %}
+      <div class="card p-1 m-2" id="dab-card-{{ dab.num }}">
+      <h3 class="card-title">{{ dab.title }}</h3>
+      <div><a href="#" onclick="return jump_to({{ dab.num }})">Show in article</a></div>
+      <div>{{ dab.html | safe }}</div>
+      </div>
+      {% endfor %}
+  </div>
+  </div>
+</div>
+
+<script>
+  function jump_to(dab_num) {
+    var links = document.getElementsByTagName("a");
+    for(var i=0; i<links.length; i++) {
+      links[i].classList.remove("disambig-highlight");
+    }
+
+    var cards = document.getElementsByClassName("card");
+    for(var i=0; i<cards.length; i++) {
+      cards[i].classList.remove("card-highlight");
+    }
+
+    var card = document.getElementById("dab-card-" + dab_num);
+    card.classList.add("card-highlight");
+
+    var link = document.getElementById("dab-" + dab_num);
+    link.scrollIntoView();
+    link.classList.add("disambig-highlight")
+    return false;
+  }
+</script>
+
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.2.0/dist/js/bootstrap.bundle.min.js" integrity="sha384-A3rJD856KowSb7dwlZdYEkO39Gagi7vIsF0jrRAoQmDKKtQBHUuLZ9AsSv4jD4Xa" crossorigin="anonymous"></script>
+
+</body>
+</html>

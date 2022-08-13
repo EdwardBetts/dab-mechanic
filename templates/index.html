@@ -1,0 +1,15 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title></title>
+</head>
+
+<body>
+  <ul>
+    {% for enwiki in articles %}
+    <li><a href="{{ url_for("article", enwiki=enwiki) }}">{{ enwiki }}</li>
+    {% endfor %}
+  </ul>
+</body>
+</html>
