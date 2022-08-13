@@ -2,16 +2,39 @@
 <html lang="en">
 <head>
   <meta charset="utf-8">
-  <title></title>
+  <title>{{ title }} &ndash; dab mecanic </title>
   <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.2.0/dist/css/bootstrap.min.css" rel="stylesheet" integrity="sha384-gH2yIJqKdNHPEq0n4Mqa/HGKIhSkIHeL5AyhkYV8i59U5AR6csBvApHHNl/vI1Bx" crossorigin="anonymous">
+  <link rel="stylesheet"
+   href="//en.wikipedia.org/w/load.php?debug=false&lang=en&modules=mediawiki.legacy.commonPrint,shared|skins.vector.styles&only=styles&skin=vector&*">
 <style>
 a.disambig { color: #ff8c00; }
 a.disambig-highlight { color: #ff8c00; border: 2px solid #ff8c00; }
 a.new { color: red; }
 
+#top {
+  position: fixed;
+  left: 0px;
+  right: 0px;
+  height: 4em;
+  background: white;
+  z-index: 0;
+}
+
 #article {
-  left: 0;
-  width: 50%;
+  padding-left: 40%;
+}
+
+.dab-highlight {
+  border: 2px solid blue;
+}
+
+#dabs {
+  position: fixed;
+  top: 0em;
+  left: 0px;
+  width: 40%;
+  overflow: auto;
+  bottom: 0px;
 }
 
 .card-highlight {
@@ -23,43 +46,125 @@ a.new { color: red; }
 </head>
 
 <body>
-
-<div class="m-3 container-fluid">
-  <div class="row">
-  <div class="col-8">
+  <div id="dabs" class="p-3">
     <h1>{{ title }}</h1>
-    <div>{{ text | safe }}</div>
+    <div id="save-panel" class="d-none">
+    <form method="POST" action="{{ url_for("save", enwiki=enwiki_underscore) }}">
+      <button class="btn btn-primary" id="save-btn">Save</button>
+      <span id="edit-count"></span>
+      <input type="hidden" value="{}" id="save-edits" name="edits">
+    </form>
+    </div>
+    <div>There are {{ dab_list | count }} links in the article that need disambiguating.</div>
+    {% for dab in dab_list %}
+    <div class="card p-1 m-2">
+      <h3 class="card-title" id="dab-card-title-{{ dab.num }}" onclick="return jump_to({{ dab.num }})">{{ dab.title }}</h3>
+    <div>
+      <a href="#" onclick="return jump_to({{ dab.num }})">highlight link</a>
+      <span class="d-none" id="cancel-{{ dab.num }}">
+      |
+      <a href="#" onclick="return cancel_selection({{ dab.num }})">cancel selection</a>
+      </span>
+    </div>
+    <div class="dab-article" id="dab-article-{{ dab.num }}">{{ dab.html | safe }}</div>
+    </div>
+    {% endfor %}
   </div>
-  <div class="col-4">
-      {% for dab in dab_list %}
-      <div class="card p-1 m-2" id="dab-card-{{ dab.num }}">
-      <h3 class="card-title">{{ dab.title }}</h3>
-      <div><a href="#" onclick="return jump_to({{ dab.num }})">Show in article</a></div>
-      <div>{{ dab.html | safe }}</div>
-      </div>
-      {% endfor %}
-  </div>
+  <div id="article" class="pe-3">
+      <div>{{ text | safe }}</div>
+    </div>
   </div>
 </div>
 
 <script>
+
+  var edit_set = new Set();
+  var edits = {};
+  var dab_lookup = {{ dab_lookup | tojson }};
+
   function jump_to(dab_num) {
+    var highlight_title = "text-bg-primary";
+
     var links = document.getElementsByTagName("a");
     for(var i=0; i<links.length; i++) {
       links[i].classList.remove("disambig-highlight");
     }
 
-    var cards = document.getElementsByClassName("card");
-    for(var i=0; i<cards.length; i++) {
-      cards[i].classList.remove("card-highlight");
+    var card_titles = document.getElementsByClassName("card-title");
+    for(var i=0; i<card_titles.length; i++) {
+      card_titles[i].classList.remove(highlight_title);
     }
 
-    var card = document.getElementById("dab-card-" + dab_num);
-    card.classList.add("card-highlight");
+    var card_title = document.getElementById("dab-card-title-" + dab_num);
+    card_title.classList.add(highlight_title);
 
     var link = document.getElementById("dab-" + dab_num);
     link.scrollIntoView();
     link.classList.add("disambig-highlight")
+    return false;
+  }
+
+  function clear_dab_highlight(dab_num) {
+    var dab_article = document.getElementById("dab-article-" + dab_num);
+
+    var links = dab_article.querySelectorAll("a");
+    for(var i=0; i<links.length; i++) {
+      links[i].classList.remove("dab-highlight");
+    }
+  }
+
+  function update_edit_count() {
+    var save_panel = document.getElementById("save-panel")
+    if (edit_set.size) {
+      save_panel.classList.remove("d-none");
+      var edit_count = edit_set.size == 1 ? "1 edit" : edit_set.size + " edits";
+      document.getElementById("edit-count").textContent = edit_count;
+    } else {
+      save_panel.classList.add("d-none");
+      document.getElementById("edit-count").textContent = "";
+    }
+  }
+
+  function update_edits() {
+    var save_edits = document.getElementById("save-edits");
+    save_edits.value = JSON.stringify(edits);
+  }
+
+  function select_dab(element, dab_num) {
+    jump_to(dab_num);
+    document.getElementById("cancel-" + dab_num).classList.remove("d-none");
+
+    var title = element.getAttribute("title");
+    edits[dab_lookup[dab_num]] = title;
+
+    edit_set.add(dab_num);
+    update_edits();
+    update_edit_count();
+
+    clear_dab_highlight(dab_num);
+
+    var dab_article = document.getElementById("dab-article-" + dab_num);
+
+    var links = dab_article.querySelectorAll("a");
+    for(var i=0; i<links.length; i++) {
+      links[i].classList.remove("dab-highlight");
+    }
+
+    var title = element.getAttribute("title");
+    element.classList.add("dab-highlight");
+    console.log(title, dab_num);
+    return false;
+  }
+
+  function cancel_selection(dab_num) {
+    delete edits[dab_lookup[dab_num]];
+    document.getElementById("cancel-" + dab_num).classList.add("d-none");
+    clear_dab_highlight(dab_num);
+    edit_set.delete(dab_num);
+
+    update_edits();
+    update_edit_count();
+
     return false;
   }
 </script>

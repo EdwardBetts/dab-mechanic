@@ -1,6 +1,8 @@
 #!/usr/bin/python3
 
+import json
 from collections import defaultdict
+from typing import Any
 
 import flask
 import lxml.html
@@ -21,9 +23,10 @@ def index():
 
 
 def get_article_html(enwiki: str) -> str:
+    """Parse article wikitext and return HTML."""
     url = "https://en.wikipedia.org/w/api.php"
 
-    params = {
+    params: dict[str, str | int] = {
         "action": "parse",
         "format": "json",
         "formatversion": 2,
@@ -70,11 +73,9 @@ disambig_templates = [
 ]
 
 
-def get_article_links(enwiki: str) -> list[str]:
-    """Get links that appear in this article."""
-    url = "https://en.wikipedia.org/w/api.php"
-
-    params = {
+def link_params(enwiki: str) -> dict[str, str | int]:
+    """Parameters for finding article links from the API."""
+    params: dict[str, str | int] = {
         "action": "query",
         "format": "json",
         "formatversion": 2,
@@ -87,35 +88,88 @@ def get_article_links(enwiki: str) -> list[str]:
         "tltemplates": "|".join(disambig_templates),
         "prop": "templates",
     }
+    return params
 
-    links = []
+
+def needs_disambig(link: dict[str, Any]) -> bool:
+    """Is this a disambiguation link."""
+    return bool(
+        not link["title"].endswith(" (disambiguation)") and link.get("templates")
+    )
+
+
+def get_article_links(enwiki: str) -> list[str]:
+    """Get links that appear in this article."""
+    url = "https://en.wikipedia.org/w/api.php"
+
+    params: dict[str, str | int] = link_params(enwiki)
+    links: set[str] = set()
 
     while True:
-        r = requests.get(url, params=params)
-        json_data = r.json()
-        query = json_data.pop("query")
-        pages = query["pages"]
-        for page in pages:
-            title = page["title"]
-            if title.endswith(" (disambiguation)") or not page.get("templates"):
-                continue
-            if title not in links:
-                links.append(title)
+        data = requests.get(url, params=params).json()
+        links.update(
+            page["title"] for page in data["query"]["pages"] if needs_disambig(page)
+        )
 
-        if "continue" not in json_data:
+        if "continue" not in data:
             break
-        print(json_data["continue"])
 
-        params["gplcontinue"] = json_data["continue"]["gplcontinue"]
+        params["gplcontinue"] = data["continue"]["gplcontinue"]
 
-    return links
+    return list(links)
 
     # return {link["title"] for link in r.json()["query"]["pages"][0]["links"]}
+
+
+def delete_toc(root: lxml.html.HtmlElement) -> None:
+    """Delete table of contents from article HTML."""
+    for toc in root.findall(".//div[@class='toc']"):
+        toc.getparent().remove(toc)
+
+
+def get_dab_html(dab_num: int, title: str) -> str:
+    """Parse dab page and rewrite links."""
+    dab_html = get_article_html(title)
+    root = lxml.html.fromstring(dab_html)
+    delete_toc(root)
+
+    element_id_map = {e.get("id"): e for e in root.findall(".//*[@id]")}
+
+    for a in root.findall(".//a[@href]"):
+        href: str | None = a.get("href")
+        if not href:
+            continue
+        if not href.startswith("#"):
+            a.set("href", "#")
+            a.set("onclick", f"return select_dab(this, {dab_num})")
+            continue
+
+        destination_element = element_id_map[href[1:]]
+        assert destination_element is not None
+        destination_element.set("id", f"{dab_num}{href[1:]}")
+        a.set("href", f"#{dab_num}{href[1:]}")
+
+    html: str = lxml.html.tostring(root, encoding=str)
+    return html
+
+
+@app.route("/save/<path:enwiki>", methods=["POST"])
+def save(enwiki: str) -> Response | str:
+    """Save edits to article."""
+    edits = json.loads(flask.request.form["edits"])
+    return flask.render_template("save.html", title=enwiki, edits=edits)
 
 
 @app.route("/enwiki/<path:enwiki>")
 def article(enwiki: str) -> Response:
     """Article Page."""
+    enwiki_orig = enwiki
+    enwiki = enwiki.replace("_", " ")
+    enwiki_underscore = enwiki.replace(" ", "_")
+    if " " in enwiki_orig:
+        return flask.redirect(
+            flask.url_for(flask.request.endpoint, enwiki=enwiki_underscore)
+        )
     html = get_article_html(enwiki)
     links = get_article_links(enwiki)
 
@@ -124,6 +178,7 @@ def article(enwiki: str) -> Response:
     seen = set()
 
     dab_list = []
+    dab_lookup = {}
     dab_num = 0
 
     for a in root.findall(".//a[@href]"):
@@ -137,18 +192,21 @@ def article(enwiki: str) -> Response:
             dab_num += 1
             a.set("id", f"dab-{dab_num}")
             seen.add(title)
-            dab_html = get_article_html(title)
+            dab_html = get_dab_html(dab_num, title)
             dab_list.append({"num": dab_num, "title": title, "html": dab_html})
+            dab_lookup[dab_num] = title
 
         html_links[title].append(a)
 
     return flask.render_template(
         "article.html",
         title=enwiki,
+        enwiki_underscore=enwiki_underscore,
         text=lxml.html.tostring(root, encoding=str),
         links=links,
         html_links=html_links,
         dab_list=dab_list,
+        dab_lookup=dab_lookup,
     )
 
 
