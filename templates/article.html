@@ -55,8 +55,8 @@ a.new { color: red; }
       <input type="hidden" value="{}" id="save-edits" name="edits">
     </form>
     </div>
-    <div>There are {{ dab_list | count }} links in the article that need disambiguating.</div>
-    {% for dab in dab_list %}
+    <div>There are {{ article.dab_list | count }} links in the article that need disambiguating.</div>
+    {% for dab in article.dab_list %}
     <div class="card p-1 m-2">
       <h3 class="card-title" id="dab-card-title-{{ dab.num }}" onclick="return jump_to({{ dab.num }})">{{ dab.title }}</h3>
     <div>
@@ -71,7 +71,7 @@ a.new { color: red; }
     {% endfor %}
   </div>
   <div id="article" class="pe-3">
-      <div>{{ text | safe }}</div>
+      <div>{{ article.get_html() | safe }}</div>
     </div>
   </div>
 </div>

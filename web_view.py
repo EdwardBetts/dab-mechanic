@@ -238,7 +238,6 @@ class Article:
         self.dab_list: list[DabItem] = []
         self.dab_lookup: dict[int, str] = {}
         self.dab_order: list[str] = []
-        # self.html_links: defaultdict[str, lxml.html.Element] = defaultdict(list)
 
     def save_endpoint(self) -> str:
         """Endpoint for saving changes."""
@@ -272,9 +271,7 @@ class Article:
                 self.dab_order.append(title)
                 self.dab_lookup[dab_num] = title
 
-            # self.html_links[title].append(a)
-
-    def article_html(self) -> str:
+    def get_html(self) -> str:
         """Return the processed article HTML."""
         html: str = lxml.html.tostring(self.root, encoding=str)
         return html
@@ -295,14 +292,7 @@ def article_page(enwiki: str) -> Response:
     article.load()
     article.process_links()
 
-    return flask.render_template(
-        "article.html",
-        article=article,
-        text=article.article_html(),
-        links=article.links,
-        # html_links=article.html_links,
-        dab_list=article.dab_list,
-    )
+    return flask.render_template("article.html", article=article)
 
 
 if __name__ == "__main__":
