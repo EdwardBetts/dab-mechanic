@@ -8,7 +8,7 @@
 <body>
   <ul>
     {% for enwiki in articles %}
-    <li><a href="{{ url_for("article", enwiki=enwiki) }}">{{ enwiki }}</li>
+    <li><a href="{{ url_for("article_page", enwiki=enwiki) }}">{{ enwiki }}</li>
     {% endfor %}
   </ul>
 </body>

@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="utf-8">
-  <title>{{ title }} &ndash; dab mecanic </title>
+  <title>{{ article.enwiki }} &ndash; dab mechanic</title>
   <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.2.0/dist/css/bootstrap.min.css" rel="stylesheet" integrity="sha384-gH2yIJqKdNHPEq0n4Mqa/HGKIhSkIHeL5AyhkYV8i59U5AR6csBvApHHNl/vI1Bx" crossorigin="anonymous">
   <link rel="stylesheet"
    href="//en.wikipedia.org/w/load.php?debug=false&lang=en&modules=mediawiki.legacy.commonPrint,shared|skins.vector.styles&only=styles&skin=vector&*">
@@ -47,9 +47,9 @@ a.new { color: red; }
 
 <body>
   <div id="dabs" class="p-3">
-    <h1>{{ title }}</h1>
+    <h1>{{ article.enwiki }}</h1>
     <div id="save-panel" class="d-none">
-    <form method="POST" action="{{ url_for("save", enwiki=enwiki_underscore) }}">
+    <form method="POST" action="{{ article.save_endpoint() }}">
       <button class="btn btn-primary" id="save-btn">Save</button>
       <span id="edit-count"></span>
       <input type="hidden" value="{}" id="save-edits" name="edits">
@@ -80,7 +80,8 @@ a.new { color: red; }
 
   var edit_set = new Set();
   var edits = {};
-  var dab_lookup = {{ dab_lookup | tojson }};
+  var dab_lookup = {{ article.dab_lookup | tojson }};
+  var dab_order = {{ article.dab_order | tojson }};
 
   function jump_to(dab_num) {
     var highlight_title = "text-bg-primary";
@@ -126,8 +127,9 @@ a.new { color: red; }
   }
 
   function update_edits() {
+    var saves = dab_order.filter(t => edits[t]).map(t => [t, edits[t]]);
     var save_edits = document.getElementById("save-edits");
-    save_edits.value = JSON.stringify(edits);
+    save_edits.value = JSON.stringify(saves);
   }
 
   function select_dab(element, dab_num) {

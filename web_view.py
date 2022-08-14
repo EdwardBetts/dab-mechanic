@@ -1,8 +1,8 @@
 #!/usr/bin/python3
 
 import json
-from collections import defaultdict
-from typing import Any
+import re
+from typing import Any, TypedDict
 
 import flask
 import lxml.html
@@ -10,9 +10,24 @@ import requests
 from werkzeug.wrappers import Response
 
 app = flask.Flask(__name__)
-
-
 app.debug = True
+
+api_url = "https://en.wikipedia.org/w/api.php"
+
+
+def get_content(title: str) -> str:
+    """Get article text."""
+    params: dict[str, str | int] = {
+        "action": "query",
+        "format": "json",
+        "formatversion": 2,
+        "prop": "revisions|info",
+        "rvprop": "content|timestamp",
+        "titles": title,
+    }
+    data = requests.get(api_url, params=params).json()
+    rev: str = data["query"]["pages"][0]["revisions"][0]["content"]
+    return rev
 
 
 @app.route("/")
@@ -153,15 +168,120 @@ def get_dab_html(dab_num: int, title: str) -> str:
     return html
 
 
+def make_disamb_link(edit: tuple[str, str]) -> str:
+    """Given an edit return the appropriate link."""
+    return f"[[{edit[1]}|{edit[0]}]]"
+
+
+def apply_edits(article_text: str, edits: list[tuple[str, str]]) -> str:
+    """Apply edits to article text."""
+
+    def escape(s: str) -> str:
+        return re.escape(s).replace("_", "[ _]").replace(r"\ ", "[ _]")
+
+    for link_from, link_to in edits:
+        print(rf"\[\[{escape(link_from)}\]\]")
+        article_text = re.sub(
+            rf"\[\[{escape(link_from)}\]\]",
+            f"[[{link_to}|{link_from}]]",
+            article_text,
+        )
+
+    return article_text
+
+
 @app.route("/save/<path:enwiki>", methods=["POST"])
 def save(enwiki: str) -> Response | str:
     """Save edits to article."""
-    edits = json.loads(flask.request.form["edits"])
-    return flask.render_template("save.html", title=enwiki, edits=edits)
+    edits = [
+        (link_to, link_from)
+        for link_to, link_from in json.loads(flask.request.form["edits"])
+    ]
+
+    enwiki = enwiki.replace("_", " ")
+    titles = ", ".join(make_disamb_link(edit) for edit in edits[:-1])
+    if len(titles) > 1:
+        titles += " and "
+
+    titles += make_disamb_link(edits[-1])
+
+    edit_summary = f"Disambiguate {titles} using [[User:Edward/Dab mechanic]]"
+
+    article_text = apply_edits(get_content(enwiki), edits)
+
+    return flask.render_template(
+        "save.html",
+        edit_summary=edit_summary,
+        title=enwiki,
+        edits=edits,
+        text=article_text,
+    )
+
+
+class DabItem(TypedDict):
+    """Represent a disabiguation page."""
+
+    num: int
+    title: str
+    html: str
+
+
+class Article:
+    """Current article we're working on."""
+
+    def __init__(self, enwiki: str) -> None:
+        """Make a new Article object."""
+        self.enwiki = enwiki
+
+        self.links = get_article_links(enwiki)
+
+        self.dab_list: list[DabItem] = []
+        self.dab_lookup: dict[int, str] = {}
+        self.dab_order: list[str] = []
+        # self.html_links: defaultdict[str, lxml.html.Element] = defaultdict(list)
+
+    def save_endpoint(self) -> str:
+        """Endpoint for saving changes."""
+        href: str = flask.url_for("save", enwiki=self.enwiki.replace(" ", "_"))
+        return href
+
+    def load(self) -> None:
+        """Load parsed article HTML."""
+        html = get_article_html(self.enwiki)
+        self.root = lxml.html.fromstring(html)
+
+    def process_links(self) -> None:
+        """Process links in parsed wikitext."""
+        dab_num = 0
+        seen = set()
+
+        for a in self.root.findall(".//a[@href]"):
+            title = a.get("title")
+            if title is None:
+                continue
+            if title not in self.links:
+                continue
+            a.set("class", "disambig")
+            if title not in seen:
+                dab_num += 1
+                a.set("id", f"dab-{dab_num}")
+                seen.add(title)
+                dab_html = get_dab_html(dab_num, title)
+                dab: DabItem = {"num": dab_num, "title": title, "html": dab_html}
+                self.dab_list.append(dab)
+                self.dab_order.append(title)
+                self.dab_lookup[dab_num] = title
+
+            # self.html_links[title].append(a)
+
+    def article_html(self) -> str:
+        """Return the processed article HTML."""
+        html: str = lxml.html.tostring(self.root, encoding=str)
+        return html
 
 
 @app.route("/enwiki/<path:enwiki>")
-def article(enwiki: str) -> Response:
+def article_page(enwiki: str) -> Response:
     """Article Page."""
     enwiki_orig = enwiki
     enwiki = enwiki.replace("_", " ")
@@ -170,43 +290,18 @@ def article(enwiki: str) -> Response:
         return flask.redirect(
             flask.url_for(flask.request.endpoint, enwiki=enwiki_underscore)
         )
-    html = get_article_html(enwiki)
-    links = get_article_links(enwiki)
 
-    root = lxml.html.fromstring(html)
-    html_links = defaultdict(list)
-    seen = set()
-
-    dab_list = []
-    dab_lookup = {}
-    dab_num = 0
-
-    for a in root.findall(".//a[@href]"):
-        title = a.get("title")
-        if title is None:
-            continue
-        if title not in links:
-            continue
-        a.set("class", "disambig")
-        if title not in seen:
-            dab_num += 1
-            a.set("id", f"dab-{dab_num}")
-            seen.add(title)
-            dab_html = get_dab_html(dab_num, title)
-            dab_list.append({"num": dab_num, "title": title, "html": dab_html})
-            dab_lookup[dab_num] = title
-
-        html_links[title].append(a)
+    article = Article(enwiki)
+    article.load()
+    article.process_links()
 
     return flask.render_template(
         "article.html",
-        title=enwiki,
-        enwiki_underscore=enwiki_underscore,
-        text=lxml.html.tostring(root, encoding=str),
-        links=links,
-        html_links=html_links,
-        dab_list=dab_list,
-        dab_lookup=dab_lookup,
+        article=article,
+        text=article.article_html(),
+        links=article.links,
+        # html_links=article.html_links,
+        dab_list=article.dab_list,
     )
 
 
