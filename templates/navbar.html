@@ -1,0 +1,46 @@
+{% macro nav_item(name, label) %}
+<li class="nav-item{% if name == active %} active{% endif %}">
+  <a class="nav-link" href="{{ url_for(name) }}">{{ label }}{% if name == active %} <span class="sr-only">(current)</span>{% endif %}</a>
+</li>
+{% endmacro %}
+
+
+{% macro navbar() %}
+<nav class="navbar navbar-expand-lg bg-light">
+  <div class="container-fluid">
+    <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarTogglerDemo01" aria-controls="navbarTogglerDemo01" aria-expanded="false" aria-label="Toggle navigation">
+      <span class="navbar-toggler-icon"></span>
+    </button>
+    <div class="collapse navbar-collapse" id="navbarTogglerDemo01">
+      <a class="navbar-brand" href="{{ url_for('index') }}">Dab Mechanic</a>
+      <ul class="navbar-nav me-auto mb-2 mb-lg-0">
+        <li class="nav-item">
+          <a class="nav-link active" aria-current="page" href="#">Home</a>
+        </li>
+        <li class="nav-item">
+          <a class="nav-link" href="#">Link</a>
+        </li>
+        <li class="nav-item">
+          <a class="nav-link disabled">Disabled</a>
+        </li>
+      </ul>
+
+      <ul class="navbar-nav d-flex">
+        {% if g.user %}
+          <li class="nav-item">
+            <a class="nav-link" href="{{ url_for('user_page', username=g.user) }}">{{ g.user }}</a>
+          </li>
+          <li class="nav-item">
+            <a class="nav-link" href="{{ url_for('oauth_disconnect', next=request.script_root + request.full_path) }}">switch user</a>
+          </li>
+        {% else %}
+          <li class="nav-item">
+            {% set login_url = url_for('start_oauth', next=request.script_root + request.full_path) %}
+            <a class="nav-link" href="{{ login_url }}">connect with Wikidata</a>
+          </li>
+        {% endif %}
+      </ul>
+    </div>
+  </div>
+</nav>
+{% endmacro %}

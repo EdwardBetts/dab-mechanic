@@ -1,5 +1,6 @@
 #!/usr/bin/python3
 
+import inspect
 import json
 import re
 from typing import Any, Iterator, TypedDict
@@ -7,7 +8,9 @@ from typing import Any, Iterator, TypedDict
 import flask
 import lxml.html
 import requests
+import werkzeug.exceptions
 from requests_oauthlib import OAuth1Session
+from werkzeug.debug.tbtools import get_current_traceback
 from werkzeug.wrappers import Response
 
 app = flask.Flask(__name__)
@@ -15,6 +18,22 @@ app.config.from_object("config.default")
 app.debug = True
 
 api_url = "https://en.wikipedia.org/w/api.php"
+
+
+@app.errorhandler(werkzeug.exceptions.InternalServerError)
+def exception_handler(e):
+    tb = get_current_traceback()
+    last_frame = next(frame for frame in reversed(tb.frames) if not frame.is_library)
+    last_frame_args = inspect.getargs(last_frame.code)
+    return (
+        flask.render_template(
+            "show_error.html",
+            tb=tb,
+            last_frame=last_frame,
+            last_frame_args=last_frame_args,
+        ),
+        500,
+    )
 
 
 def get_content(title: str) -> str:
