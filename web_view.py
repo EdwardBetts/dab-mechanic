@@ -11,6 +11,7 @@ from requests_oauthlib import OAuth1Session
 from werkzeug.wrappers import Response
 
 app = flask.Flask(__name__)
+app.config.from_object("config.default")
 app.debug = True
 
 api_url = "https://en.wikipedia.org/w/api.php"
