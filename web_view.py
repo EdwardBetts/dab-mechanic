@@ -7,6 +7,7 @@ from typing import Any, Iterator, TypedDict
 import flask
 import lxml.html
 import requests
+from requests_oauthlib import OAuth1Session
 from werkzeug.wrappers import Response
 
 app = flask.Flask(__name__)
@@ -300,6 +301,68 @@ def article_page(enwiki: str) -> Response:
     article.process_links()
 
     return flask.render_template("article.html", article=article)
+
+
+@app.route("/oauth/start")
+def start_oauth():
+    next_page = flask.request.args.get("next")
+    if next_page:
+        flask.session["after_login"] = next_page
+
+    client_key = app.config["CLIENT_KEY"]
+    client_secret = app.config["CLIENT_SECRET"]
+    request_token_url = api_url + "?title=Special%3aOAuth%2finitiate"
+
+    oauth = OAuth1Session(client_key, client_secret=client_secret, callback_uri="oob")
+    fetch_response = oauth.fetch_request_token(request_token_url)
+
+    flask.session["owner_key"] = fetch_response.get("oauth_token")
+    flask.session["owner_secret"] = fetch_response.get("oauth_token_secret")
+
+    base_authorization_url = "https://www.wikidata.org/wiki/Special:OAuth/authorize"
+    authorization_url = oauth.authorization_url(
+        base_authorization_url, oauth_consumer_key=client_key
+    )
+    return flask.redirect(authorization_url)
+
+
+@app.route("/oauth/callback", methods=["GET"])
+def oauth_callback():
+    client_key = app.config["CLIENT_KEY"]
+    client_secret = app.config["CLIENT_SECRET"]
+
+    oauth = OAuth1Session(
+        client_key,
+        client_secret=client_secret,
+        resource_owner_key=flask.session["owner_key"],
+        resource_owner_secret=flask.session["owner_secret"],
+    )
+
+    oauth_response = oauth.parse_authorization_response(flask.request.url)
+    verifier = oauth_response.get("oauth_verifier")
+    access_token_url = api_url + "?title=Special%3aOAuth%2ftoken"
+    oauth = OAuth1Session(
+        client_key,
+        client_secret=client_secret,
+        resource_owner_key=flask.session["owner_key"],
+        resource_owner_secret=flask.session["owner_secret"],
+        verifier=verifier,
+    )
+
+    oauth_tokens = oauth.fetch_access_token(access_token_url)
+    flask.session["owner_key"] = oauth_tokens.get("oauth_token")
+    flask.session["owner_secret"] = oauth_tokens.get("oauth_token_secret")
+
+    next_page = flask.session.get("after_login")
+    return flask.redirect(next_page) if next_page else flask.url_for("index")
+
+
+@app.route("/oauth/disconnect")
+def oauth_disconnect():
+    for key in "owner_key", "owner_secret", "username", "after_login":
+        if key in flask.session:
+            del flask.session[key]
+    return flask.redirect(flask.url_for("index"))
 
 
 if __name__ == "__main__":
