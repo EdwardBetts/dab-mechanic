@@ -1,15 +1,9 @@
-<!doctype html>
-<html lang="en">
-<head>
-  <meta charset="utf-8">
-  <title></title>
-</head>
+{% extends "base.html" %}
 
-<body>
+{% block content %}
   <ul>
     {% for enwiki in articles %}
     <li><a href="{{ url_for("article_page", enwiki=enwiki) }}">{{ enwiki }}</li>
     {% endfor %}
   </ul>
-</body>
-</html>
+{% endblock %}
