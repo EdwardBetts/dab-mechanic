@@ -2,7 +2,7 @@
 
 import json
 import re
-from typing import Any, TypedDict
+from typing import Any, Iterator, TypedDict
 
 import flask
 import lxml.html
@@ -249,27 +249,34 @@ class Article:
         html = get_article_html(self.enwiki)
         self.root = lxml.html.fromstring(html)
 
-    def process_links(self) -> None:
-        """Process links in parsed wikitext."""
-        dab_num = 0
+    def iter_links(self) -> Iterator[tuple[lxml.html.Element, str]]:
+        """Disambiguation links that need fixing."""
         seen = set()
-
         for a in self.root.findall(".//a[@href]"):
             title = a.get("title")
-            if title is None:
-                continue
-            if title not in self.links:
+            if title is None or title not in self.links:
                 continue
             a.set("class", "disambig")
-            if title not in seen:
-                dab_num += 1
-                a.set("id", f"dab-{dab_num}")
-                seen.add(title)
-                dab_html = get_dab_html(dab_num, title)
-                dab: DabItem = {"num": dab_num, "title": title, "html": dab_html}
-                self.dab_list.append(dab)
-                self.dab_order.append(title)
-                self.dab_lookup[dab_num] = title
+
+            if title in seen:
+                continue
+            seen.add(title)
+
+            yield a, title
+
+    def process_links(self) -> None:
+        """Process links in parsed wikitext."""
+        for dab_num, (a, title) in enumerate(self.iter_links()):
+            a.set("id", f"dab-{dab_num}")
+
+            dab: DabItem = {
+                "num": dab_num,
+                "title": title,
+                "html": get_dab_html(dab_num, title),
+            }
+            self.dab_list.append(dab)
+            self.dab_order.append(title)
+            self.dab_lookup[dab_num] = title
 
     def get_html(self) -> str:
         """Return the processed article HTML."""
