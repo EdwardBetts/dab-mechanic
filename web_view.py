@@ -3,6 +3,7 @@
 import inspect
 import json
 import re
+from dab_mechanic import wikidata_oauth
 from typing import Any, Iterator, TypedDict
 
 import flask
@@ -17,7 +18,14 @@ app = flask.Flask(__name__)
 app.config.from_object("config.default")
 app.debug = True
 
-api_url = "https://en.wikipedia.org/w/api.php"
+wiki_hostname = "en.wikipedia.org"
+wiki_api_php = f"https://{wiki_hostname}/w/api.php"
+wiki_index_php = f"https://{wiki_hostname}/w/index.php"
+
+@app.before_request
+def global_user():
+    """Make username available everywhere."""
+    flask.g.user = wikidata_oauth.get_username()
 
 
 @app.errorhandler(werkzeug.exceptions.InternalServerError)
@@ -46,7 +54,7 @@ def get_content(title: str) -> str:
         "rvprop": "content|timestamp",
         "titles": title,
     }
-    data = requests.get(api_url, params=params).json()
+    data = requests.get(wiki_api_php, params=params).json()
     rev: str = data["query"]["pages"][0]["revisions"][0]["content"]
     return rev
 
@@ -331,7 +339,7 @@ def start_oauth():
 
     client_key = app.config["CLIENT_KEY"]
     client_secret = app.config["CLIENT_SECRET"]
-    request_token_url = api_url + "?title=Special%3aOAuth%2finitiate"
+    request_token_url = wiki_index_php + "?title=Special%3aOAuth%2finitiate"
 
     oauth = OAuth1Session(client_key, client_secret=client_secret, callback_uri="oob")
     fetch_response = oauth.fetch_request_token(request_token_url)
@@ -339,7 +347,7 @@ def start_oauth():
     flask.session["owner_key"] = fetch_response.get("oauth_token")
     flask.session["owner_secret"] = fetch_response.get("oauth_token_secret")
 
-    base_authorization_url = "https://www.wikidata.org/wiki/Special:OAuth/authorize"
+    base_authorization_url = f"https://{wiki_hostname}/wiki/Special:OAuth/authorize"
     authorization_url = oauth.authorization_url(
         base_authorization_url, oauth_consumer_key=client_key
     )
@@ -360,7 +368,7 @@ def oauth_callback():
 
     oauth_response = oauth.parse_authorization_response(flask.request.url)
     verifier = oauth_response.get("oauth_verifier")
-    access_token_url = api_url + "?title=Special%3aOAuth%2ftoken"
+    access_token_url = wiki_index_php + "?title=Special%3aOAuth%2ftoken"
     oauth = OAuth1Session(
         client_key,
         client_secret=client_secret,
