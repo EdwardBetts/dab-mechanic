@@ -28,7 +28,7 @@
       <ul class="navbar-nav d-flex">
         {% if g.user %}
           <li class="nav-item">
-            <a class="nav-link" href="{{ url_for('user_page', username=g.user) }}">{{ g.user }}</a>
+            <a class="nav-link" href="https://en.wikipedia.org/wiki/User:{{ g.user }}">{{ g.user }}</a>
           </li>
           <li class="nav-item">
             <a class="nav-link" href="{{ url_for('oauth_disconnect', next=request.script_root + request.full_path) }}">switch user</a>
