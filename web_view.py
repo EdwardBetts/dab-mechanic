@@ -3,6 +3,7 @@
 import inspect
 import json
 import re
+from typing import Optional
 
 import flask
 import lxml.html
@@ -123,16 +124,23 @@ def save(enwiki: str) -> Response | str:
     )
 
 
+def redirect_if_needed(enwiki: str) -> Optional[Response]:
+    """Check if there are spaces in the article name and redirect."""
+    return (
+        flask.redirect(
+            flask.url_for(flask.request.endpoint, enwiki=enwiki.replace(" ", "_"))
+        )
+        if " " in enwiki
+        else None
+    )
+
+
 @app.route("/enwiki/<path:enwiki>")
 def article_page(enwiki: str) -> Response:
     """Article Page."""
-    enwiki_orig = enwiki
-    enwiki = enwiki.replace("_", " ")
-    enwiki_underscore = enwiki.replace(" ", "_")
-    if " " in enwiki_orig:
-        return flask.redirect(
-            flask.url_for(flask.request.endpoint, enwiki=enwiki_underscore)
-        )
+    redirect = redirect_if_needed(enwiki)
+    if redirect:
+        return redirect
 
     article = wikipedia.Article(enwiki)
     article.load()

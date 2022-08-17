@@ -147,7 +147,7 @@ class Article:
 
     def __init__(self, enwiki: str) -> None:
         """Make a new Article object."""
-        self.enwiki = enwiki
+        self.enwiki = enwiki.replace("_", " ")
 
         self.links = get_article_links(enwiki)
 
