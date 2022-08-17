@@ -12,7 +12,7 @@ from requests_oauthlib import OAuth1Session
 from werkzeug.debug.tbtools import get_current_traceback
 from werkzeug.wrappers import Response
 
-from dab_mechanic import wikidata_oauth, wikipedia
+from dab_mechanic import mediawiki_api, wikidata_oauth, wikipedia
 
 app = flask.Flask(__name__)
 app.config.from_object("config.default")
@@ -45,21 +45,6 @@ def exception_handler(e):
         ),
         500,
     )
-
-
-def get_content(title: str) -> str:
-    """Get article text."""
-    params: dict[str, str | int] = {
-        "action": "query",
-        "format": "json",
-        "formatversion": 2,
-        "prop": "revisions|info",
-        "rvprop": "content|timestamp",
-        "titles": title,
-    }
-    data = requests.get(wiki_api_php, params=params).json()
-    rev: str = data["query"]["pages"][0]["revisions"][0]["content"]
-    return rev
 
 
 def parse_articles_with_dab_links(root: lxml.html.Element) -> list[tuple[str, int]]:
@@ -127,7 +112,7 @@ def save(enwiki: str) -> Response | str:
 
     edit_summary = f"Disambiguate {titles} using [[User:Edward/Dab mechanic]]"
 
-    article_text = apply_edits(get_content(enwiki), edits)
+    article_text = apply_edits(mediawiki_api.get_content(enwiki), edits)
 
     return flask.render_template(
         "save.html",

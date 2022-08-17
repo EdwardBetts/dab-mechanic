@@ -3,7 +3,8 @@ from typing import Any, Iterator, Optional, TypedDict
 
 import flask
 import lxml.html
-import requests
+
+from . import mediawiki_api
 
 disambig_templates = [
     "Template:Disambiguation",
@@ -67,7 +68,6 @@ def needs_disambig(link: dict[str, Any]) -> bool:
 
 def get_article_links(enwiki: str) -> list[str]:
     """Get links that appear in this article."""
-    url = "https://en.wikipedia.org/w/api.php"
 
     params: dict[str, str | int] = link_params(enwiki)
     links: set[str] = set()
@@ -75,7 +75,7 @@ def get_article_links(enwiki: str) -> list[str]:
     redirects = defaultdict(set)
 
     while True:
-        data = requests.get(url, params=params).json()
+        data = mediawiki_api.get(params)
         pages = data["query"].pop("pages")
         for r in data["query"].pop("redirects"):
             redirects[r["to"]].add(r["from"])
@@ -96,28 +96,9 @@ def get_article_links(enwiki: str) -> list[str]:
     # return {link["title"] for link in r.json()["query"]["pages"][0]["links"]}
 
 
-def call_parse_api(enwiki: str) -> dict[str, Any]:
-    """Call mediawiki parse API for given article."""
-    url = "https://en.wikipedia.org/w/api.php"
-
-    params: dict[str, str | int] = {
-        "action": "parse",
-        "format": "json",
-        "formatversion": 2,
-        "disableeditsection": 1,
-        "page": enwiki,
-        "prop": "text|links|headhtml",
-        "disabletoc": 1,
-    }
-
-    r = requests.get(url, params=params)
-    parse: dict[str, Any] = r.json()["parse"]
-    return parse
-
-
 def get_article_html(enwiki: str) -> str:
     """Parse article wikitext and return HTML."""
-    text: str = call_parse_api(enwiki)["text"]
+    text: str = mediawiki_api.parse_page(enwiki)["text"]
     return text
 
 
@@ -182,7 +163,7 @@ class Article:
 
     def load(self) -> None:
         """Load parsed article HTML."""
-        self.parse = call_parse_api(self.enwiki)
+        self.parse = mediawiki_api.parse_page(self.enwiki)
         self.root = lxml.html.fromstring(self.parse.pop("text"))
 
     def iter_links(self) -> Iterator[tuple[lxml.html.Element, str]]:
