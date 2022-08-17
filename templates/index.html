@@ -2,8 +2,11 @@
 
 {% block content %}
   <ul>
-    {% for enwiki in articles %}
-    <li><a href="{{ url_for("article_page", enwiki=enwiki) }}">{{ enwiki }}</li>
+    {% for enwiki, count in articles %}
+    <li>
+      <a href="{{ url_for("article_page", enwiki=enwiki) }}">{{ enwiki }}
+      ({{ count }} links)
+    </li>
     {% endfor %}
   </ul>
 {% endblock %}

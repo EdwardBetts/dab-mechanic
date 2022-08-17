@@ -3,8 +3,7 @@
 import inspect
 import json
 import re
-from dab_mechanic import wikidata_oauth
-from typing import Any, Iterator, TypedDict
+from typing import Any, Iterator, Optional, TypedDict
 
 import flask
 import lxml.html
@@ -14,6 +13,8 @@ from requests_oauthlib import OAuth1Session
 from werkzeug.debug.tbtools import get_current_traceback
 from werkzeug.wrappers import Response
 
+from dab_mechanic import wikidata_oauth
+
 app = flask.Flask(__name__)
 app.config.from_object("config.default")
 app.debug = True
@@ -21,6 +22,7 @@ app.debug = True
 wiki_hostname = "en.wikipedia.org"
 wiki_api_php = f"https://{wiki_hostname}/w/api.php"
 wiki_index_php = f"https://{wiki_hostname}/w/index.php"
+
 
 @app.before_request
 def global_user():
@@ -59,15 +61,35 @@ def get_content(title: str) -> str:
     return rev
 
 
+def parse_articles_with_dab_links(root: lxml.html.Element) -> list[tuple[str, int]]:
+    """Parse Articles With Multiple Dablinks."""
+    articles = []
+    table = root.find(".//table")
+    for tr in table:
+        title = tr[0][0].text
+        count_text = tr[1][0].text
+        assert count_text.endswith(" links")
+        count = int(count_text[:-6])
+
+        articles.append((title, count))
+
+    return articles
+
+
 @app.route("/")
 def index():
-    articles = [line[:-1] for line in open("article_list")]
+
+    r = requests.get("https://dplbot.toolforge.org/articles_with_dab_links.php")
+    root = lxml.html.fromstring(r.content)
+    articles = parse_articles_with_dab_links(root)
+
+    # articles = [line[:-1] for line in open("article_list")]
 
     return flask.render_template("index.html", articles=articles)
 
 
-def get_article_html(enwiki: str) -> str:
-    """Parse article wikitext and return HTML."""
+def call_parse_api(enwiki: str) -> dict[str, Any]:
+    """Call mediawiki parse API for given article."""
     url = "https://en.wikipedia.org/w/api.php"
 
     params: dict[str, str | int] = {
@@ -76,11 +98,19 @@ def get_article_html(enwiki: str) -> str:
         "formatversion": 2,
         "disableeditsection": 1,
         "page": enwiki,
+        "prop": "text|links|headhtml",
+        "disabletoc": 1,
     }
 
     r = requests.get(url, params=params)
-    html: str = r.json()["parse"]["text"]
-    return html
+    parse: dict[str, Any] = r.json()["parse"]
+    return parse
+
+
+def get_article_html(enwiki: str) -> str:
+    """Parse article wikitext and return HTML."""
+    text: str = call_parse_api(enwiki)["text"]
+    return text
 
 
 disambig_templates = [
@@ -267,6 +297,7 @@ class Article:
         self.dab_list: list[DabItem] = []
         self.dab_lookup: dict[int, str] = {}
         self.dab_order: list[str] = []
+        self.parse: Optional[dict[str, Any]] = None
 
     def save_endpoint(self) -> str:
         """Endpoint for saving changes."""
@@ -275,8 +306,8 @@ class Article:
 
     def load(self) -> None:
         """Load parsed article HTML."""
-        html = get_article_html(self.enwiki)
-        self.root = lxml.html.fromstring(html)
+        self.parse = call_parse_api(self.enwiki)
+        self.root = lxml.html.fromstring(self.parse.pop("text"))
 
     def iter_links(self) -> Iterator[tuple[lxml.html.Element, str]]:
         """Disambiguation links that need fixing."""
@@ -327,6 +358,8 @@ def article_page(enwiki: str) -> Response:
     article = Article(enwiki)
     article.load()
     article.process_links()
+
+    assert article.parse
 
     return flask.render_template("article.html", article=article)
 
