@@ -17,7 +17,6 @@ from dab_mechanic import mediawiki_api, wikidata_oauth, wikipedia
 
 app = flask.Flask(__name__)
 app.config.from_object("config.default")
-app.debug = True
 
 wiki_hostname = "en.wikipedia.org"
 wiki_api_php = f"https://{wiki_hostname}/w/api.php"
