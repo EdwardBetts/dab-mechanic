@@ -3,7 +3,6 @@
 import inspect
 import json
 import re
-from typing import Any, Iterator, Optional, TypedDict
 
 import flask
 import lxml.html
@@ -13,7 +12,7 @@ from requests_oauthlib import OAuth1Session
 from werkzeug.debug.tbtools import get_current_traceback
 from werkzeug.wrappers import Response
 
-from dab_mechanic import wikidata_oauth
+from dab_mechanic import wikidata_oauth, wikipedia
 
 app = flask.Flask(__name__)
 app.config.from_object("config.default")
@@ -89,145 +88,6 @@ def index():
     return flask.render_template("index.html", articles=articles)
 
 
-def call_parse_api(enwiki: str) -> dict[str, Any]:
-    """Call mediawiki parse API for given article."""
-    url = "https://en.wikipedia.org/w/api.php"
-
-    params: dict[str, str | int] = {
-        "action": "parse",
-        "format": "json",
-        "formatversion": 2,
-        "disableeditsection": 1,
-        "page": enwiki,
-        "prop": "text|links|headhtml",
-        "disabletoc": 1,
-    }
-
-    r = requests.get(url, params=params)
-    parse: dict[str, Any] = r.json()["parse"]
-    return parse
-
-
-def get_article_html(enwiki: str) -> str:
-    """Parse article wikitext and return HTML."""
-    text: str = call_parse_api(enwiki)["text"]
-    return text
-
-
-disambig_templates = [
-    "Template:Disambiguation",
-    "Template:Airport disambiguation",
-    "Template:Biology disambiguation",
-    "Template:Call sign disambiguation",
-    "Template:Caselaw disambiguation",
-    "Template:Chinese title disambiguation",
-    "Template:Disambiguation cleanup",
-    "Template:Genus disambiguation",
-    "Template:Hospital disambiguation",
-    "Template:Human name disambiguation",
-    "Template:Human name disambiguation cleanup",
-    "Template:Letter-number combination disambiguation",
-    "Template:Mathematical disambiguation",
-    "Template:Military unit disambiguation",
-    "Template:Music disambiguation",
-    "Template:Number disambiguation",
-    "Template:Opus number disambiguation",
-    "Template:Phonetics disambiguation",
-    "Template:Place name disambiguation",
-    "Template:Portal disambiguation",
-    "Template:Road disambiguation",
-    "Template:School disambiguation",
-    "Template:Species Latin name abbreviation disambiguation",
-    "Template:Species Latin name disambiguation",
-    "Template:Station disambiguation",
-    "Template:Synagogue disambiguation",
-    "Template:Taxonomic authority disambiguation",
-    "Template:Taxonomy disambiguation",
-    "Template:Template disambiguation",
-    "Template:WoO number disambiguation",
-]
-
-
-def link_params(enwiki: str) -> dict[str, str | int]:
-    """Parameters for finding article links from the API."""
-    params: dict[str, str | int] = {
-        "action": "query",
-        "format": "json",
-        "formatversion": 2,
-        "titles": enwiki,
-        "generator": "links",
-        "gpllimit": "max",
-        "gplnamespace": 0,
-        "tllimit": "max",
-        "tlnamespace": 10,
-        "tltemplates": "|".join(disambig_templates),
-        "prop": "templates",
-    }
-    return params
-
-
-def needs_disambig(link: dict[str, Any]) -> bool:
-    """Is this a disambiguation link."""
-    return bool(
-        not link["title"].endswith(" (disambiguation)") and link.get("templates")
-    )
-
-
-def get_article_links(enwiki: str) -> list[str]:
-    """Get links that appear in this article."""
-    url = "https://en.wikipedia.org/w/api.php"
-
-    params: dict[str, str | int] = link_params(enwiki)
-    links: set[str] = set()
-
-    while True:
-        data = requests.get(url, params=params).json()
-        links.update(
-            page["title"] for page in data["query"]["pages"] if needs_disambig(page)
-        )
-
-        if "continue" not in data:
-            break
-
-        params["gplcontinue"] = data["continue"]["gplcontinue"]
-
-    return list(links)
-
-    # return {link["title"] for link in r.json()["query"]["pages"][0]["links"]}
-
-
-def delete_toc(root: lxml.html.HtmlElement) -> None:
-    """Delete table of contents from article HTML."""
-    for toc in root.findall(".//div[@class='toc']"):
-        toc.getparent().remove(toc)
-
-
-def get_dab_html(dab_num: int, title: str) -> str:
-    """Parse dab page and rewrite links."""
-    dab_html = get_article_html(title)
-    root = lxml.html.fromstring(dab_html)
-    delete_toc(root)
-
-    element_id_map = {e.get("id"): e for e in root.findall(".//*[@id]")}
-
-    for a in root.findall(".//a[@href]"):
-        href: str | None = a.get("href")
-        if not href:
-            continue
-        if not href.startswith("#"):
-            a.set("href", "#")
-            a.set("onclick", f"return select_dab(this, {dab_num})")
-            continue
-
-        destination_element = element_id_map[href[1:]]
-        assert destination_element is not None
-        destination_element.set("id", f"{dab_num}{href[1:]}")
-        a.set("href", f"#{dab_num}{href[1:]}")
-
-    html: str = lxml.html.tostring(root, encoding=str)
-    return html
-
-
 def make_disamb_link(edit: tuple[str, str]) -> str:
     """Given an edit return the appropriate link."""
     return f"[[{edit[1]}|{edit[0]}]]"
@@ -278,73 +138,6 @@ def save(enwiki: str) -> Response | str:
     )
 
 
-class DabItem(TypedDict):
-    """Represent a disabiguation page."""
-
-    num: int
-    title: str
-    html: str
-
-
-class Article:
-    """Current article we're working on."""
-
-    def __init__(self, enwiki: str) -> None:
-        """Make a new Article object."""
-        self.enwiki = enwiki
-
-        self.links = get_article_links(enwiki)
-
-        self.dab_list: list[DabItem] = []
-        self.dab_lookup: dict[int, str] = {}
-        self.dab_order: list[str] = []
-        self.parse: Optional[dict[str, Any]] = None
-
-    def save_endpoint(self) -> str:
-        """Endpoint for saving changes."""
-        href: str = flask.url_for("save", enwiki=self.enwiki.replace(" ", "_"))
-        return href
-
-    def load(self) -> None:
-        """Load parsed article HTML."""
-        self.parse = call_parse_api(self.enwiki)
-        self.root = lxml.html.fromstring(self.parse.pop("text"))
-
-    def iter_links(self) -> Iterator[tuple[lxml.html.Element, str]]:
-        """Disambiguation links that need fixing."""
-        seen = set()
-        for a in self.root.findall(".//a[@href]"):
-            title = a.get("title")
-            if title is None or title not in self.links:
-                continue
-            a.set("class", "disambig")
-
-            if title in seen:
-                continue
-            seen.add(title)
-
-            yield a, title
-
-    def process_links(self) -> None:
-        """Process links in parsed wikitext."""
-        for dab_num, (a, title) in enumerate(self.iter_links()):
-            a.set("id", f"dab-{dab_num}")
-
-            dab: DabItem = {
-                "num": dab_num,
-                "title": title,
-                "html": get_dab_html(dab_num, title),
-            }
-            self.dab_list.append(dab)
-            self.dab_order.append(title)
-            self.dab_lookup[dab_num] = title
-
-    def get_html(self) -> str:
-        """Return the processed article HTML."""
-        html: str = lxml.html.tostring(self.root, encoding=str)
-        return html
-
-
 @app.route("/enwiki/<path:enwiki>")
 def article_page(enwiki: str) -> Response:
     """Article Page."""
@@ -356,7 +149,7 @@ def article_page(enwiki: str) -> Response:
             flask.url_for(flask.request.endpoint, enwiki=enwiki_underscore)
         )
 
-    article = Article(enwiki)
+    article = wikipedia.Article(enwiki)
     article.load()
     article.process_links()
 
