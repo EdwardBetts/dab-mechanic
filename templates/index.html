@@ -1,12 +1,14 @@
 {% extends "base.html" %}
 
 {% block content %}
-  <ul>
+<div class="m-3">
+  <ol>
     {% for enwiki, count in articles %}
     <li>
       <a href="{{ url_for("article_page", enwiki=enwiki) }}">{{ enwiki }}
       ({{ count }} links)
     </li>
     {% endfor %}
-  </ul>
+  </ol>
+</div>
 {% endblock %}
