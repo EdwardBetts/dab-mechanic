@@ -19,7 +19,6 @@ def get_edit_proxy() -> dict[str, str]:
 def api_post_request(params: dict[str, str | int]):
     """HTTP Post using Oauth."""
     app = current_app
-    url = "https://www.wikidata.org/w/api.php"
     client_key = app.config["CLIENT_KEY"]
     client_secret = app.config["CLIENT_SECRET"]
     oauth = OAuth1Session(
@@ -29,12 +28,12 @@ def api_post_request(params: dict[str, str | int]):
         resource_owner_secret=session["owner_secret"],
     )
     proxies = get_edit_proxy()
-    return oauth.post(url, data=params, timeout=4, proxies=proxies)
+    return oauth.post(api_url, data=params, timeout=10, proxies=proxies)
 
 
 def raw_request(params):
     app = current_app
-    url = "https://www.wikidata.org/w/api.php?" + urlencode(params)
+    url = api_url + "?" + urlencode(params)
     client_key = app.config["CLIENT_KEY"]
     client_secret = app.config["CLIENT_SECRET"]
     oauth = OAuth1Session(
@@ -44,7 +43,7 @@ def raw_request(params):
         resource_owner_secret=session["owner_secret"],
     )
     proxies = get_edit_proxy()
-    return oauth.get(url, timeout=4, proxies=proxies)
+    return oauth.get(url, timeout=10, proxies=proxies)
 
 
 def api_request(params):

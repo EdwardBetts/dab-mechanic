@@ -1,8 +1,7 @@
 """Interface with the mediawiki API."""
 
 from typing import Any
-
-import requests
+from . import wikidata_oauth
 
 wiki_hostname = "en.wikipedia.org"
 wiki_api_php = f"https://{wiki_hostname}/w/api.php"
@@ -21,16 +20,14 @@ def parse_page(enwiki: str) -> dict[str, Any]:
         "disabletoc": 1,
     }
 
-    parse: dict[str, Any] = get(params)["parse"]
+    parse: dict[str, Any] = call(params)["parse"]
     return parse
 
 
-def get(params: dict[str, str | int]) -> dict[str, Any]:
+def call(params: dict[str, str | int]) -> dict[str, Any]:
     """Make GET request to mediawiki API."""
-    data: dict[str, Any] = requests.get(
-        wiki_api_php, headers={"User-Agent": user_agent}, params=params
-    ).json()
-    return data
+    data: dict[str, Any] = wikidata_oauth.api_post_request(params)
+    return data.json()
 
 
 def get_content(title: str) -> str:
@@ -43,6 +40,6 @@ def get_content(title: str) -> str:
         "rvprop": "content|timestamp",
         "titles": title,
     }
-    data = get(params)
+    data = call(params)
     rev: str = data["query"]["pages"][0]["revisions"][0]["content"]
     return rev

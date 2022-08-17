@@ -5,6 +5,8 @@ import flask
 import lxml.html
 
 from . import mediawiki_api
+from pprint import pprint
+from time import sleep
 
 disambig_templates = [
     "Template:Disambiguation",
@@ -75,7 +77,9 @@ def get_article_links(enwiki: str) -> list[str]:
     redirects = defaultdict(set)
 
     while True:
-        data = mediawiki_api.get(params)
+        data = mediawiki_api.call(params)
+        if "query" not in data:
+            pprint(data)
         pages = data["query"].pop("pages")
         for r in data["query"].pop("redirects"):
             redirects[r["to"]].add(r["from"])
@@ -86,6 +90,7 @@ def get_article_links(enwiki: str) -> list[str]:
             break
 
         params["gplcontinue"] = data["continue"]["gplcontinue"]
+        sleep(0.1)
 
     for link in set(links):
         if link in redirects:
