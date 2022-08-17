@@ -23,6 +23,8 @@ wiki_hostname = "en.wikipedia.org"
 wiki_api_php = f"https://{wiki_hostname}/w/api.php"
 wiki_index_php = f"https://{wiki_hostname}/w/index.php"
 
+awdl_url = "https://dplbot.toolforge.org/articles_with_dab_links.php"
+
 
 @app.before_request
 def global_user():
@@ -78,8 +80,7 @@ def parse_articles_with_dab_links(root: lxml.html.Element) -> list[tuple[str, in
 
 @app.route("/")
 def index():
-
-    r = requests.get("https://dplbot.toolforge.org/articles_with_dab_links.php")
+    r = requests.get(awdl_url, params={"limit": 100})
     root = lxml.html.fromstring(r.content)
     articles = parse_articles_with_dab_links(root)
 
