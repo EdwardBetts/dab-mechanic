@@ -70,7 +70,7 @@ a.new { color: red; }
       <a href="#" onclick="return cancel_selection({{ dab.num }})">cancel selection</a>
       </span>
     </div>
-    <div class="dab-article" id="dab-article-{{ dab.num }}">{{ dab.html | safe }}</div>
+    <div class="dab-article d-none" id="dab-article-{{ dab.num }}">{{ dab.html | safe }}</div>
     </div>
     {% endfor %}
   </div>
@@ -89,6 +89,14 @@ a.new { color: red; }
 
   function jump_to(dab_num) {
     var highlight_title = "text-bg-primary";
+
+    var dab_articles = document.getElementsByClassName("dab-article");
+    for(var i=0; i<dab_articles.length; i++) {
+      dab_articles[i].classList.add("d-none");
+    }
+
+    var dab_article = document.getElementById("dab-article-" + dab_num);
+    dab_article.classList.remove("d-none");
 
     var links = document.getElementsByTagName("a");
     for(var i=0; i<links.length; i++) {
