@@ -121,10 +121,9 @@ def delete_toc(root: lxml.html.HtmlElement) -> None:
         toc.getparent().remove(toc)
 
 
-def get_dab_html(dab_num: int, title: str) -> str:
+def get_dab_html(dab_num: int, html: str) -> str:
     """Parse dab page and rewrite links."""
-    dab_html = get_article_html(title)
-    root = lxml.html.fromstring(dab_html)
+    root = lxml.html.fromstring(html)
     delete_toc(root)
 
     element_id_map = {e.get("id"): e for e in root.findall(".//*[@id]")}
@@ -160,6 +159,7 @@ class Article:
         self.dab_lookup: dict[int, str] = {}
         self.dab_order: list[str] = []
         self.parse: Optional[dict[str, Any]] = None
+        self.dab_html: dict[str, str] = {}
 
     def save_endpoint(self) -> str:
         """Endpoint for saving changes."""
@@ -173,28 +173,25 @@ class Article:
 
     def iter_links(self) -> Iterator[tuple[lxml.html.Element, str]]:
         """Disambiguation links that need fixing."""
-        seen = set()
         for a in self.root.findall(".//a[@href]"):
             title = a.get("title")
             if title is None or title not in self.links:
                 continue
-            a.set("class", "disambig")
-
-            if title in seen:
-                continue
-            seen.add(title)
-
             yield a, title
 
     def process_links(self) -> None:
         """Process links in parsed wikitext."""
         for dab_num, (a, title) in enumerate(self.iter_links()):
+            a.set("class", "disambig")
             a.set("id", f"dab-{dab_num}")
+
+            if title not in self.dab_html:
+                self.dab_html[title] = get_article_html(title)
 
             dab: DabItem = {
                 "num": dab_num,
                 "title": title,
-                "html": get_dab_html(dab_num, title),
+                "html": get_dab_html(dab_num, self.dab_html[title]),
             }
             self.dab_list.append(dab)
             self.dab_order.append(title)
