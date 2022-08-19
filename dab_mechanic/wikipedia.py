@@ -68,7 +68,7 @@ def needs_disambig(link: dict[str, Any]) -> bool:
     )
 
 
-def get_article_links(enwiki: str) -> list[str]:
+def get_article_links(enwiki: str) -> dict[str, str]:
     """Get links that appear in this article."""
 
     params: dict[str, str | int] = link_params(enwiki)
@@ -92,11 +92,13 @@ def get_article_links(enwiki: str) -> list[str]:
         params["gplcontinue"] = data["continue"]["gplcontinue"]
         sleep(0.1)
 
+    ret_links = {}
     for link in set(links):
-        if link in redirects:
-            links.update(redirects[link])
+        ret_links[link] = link
+        for r in redirects.get(link, []):
+            ret_links[r] = link
 
-    return list(links)
+    return ret_links
 
     # return {link["title"] for link in r.json()["query"]["pages"][0]["links"]}
 
@@ -175,13 +177,18 @@ class Article:
         """Disambiguation links that need fixing."""
         for a in self.root.findall(".//a[@href]"):
             title = a.get("title")
-            if title is None or title not in self.links:
+            if title is not None and title in self.links:
+                yield a, title, self.links[title]
+
+            href = a.get("href")
+            if not href.startswith("/wiki/"):
                 continue
-            yield a, title
+            a.set("href", "https://en.wikipedia.org" + href)
+            a.set("target", "_blank")
 
     def process_links(self) -> None:
         """Process links in parsed wikitext."""
-        for dab_num, (a, title) in enumerate(self.iter_links()):
+        for dab_num, (a, link_to, title) in enumerate(self.iter_links()):
             a.set("class", "disambig")
             a.set("id", f"dab-{dab_num}")
 
@@ -191,6 +198,7 @@ class Article:
             dab: DabItem = {
                 "num": dab_num,
                 "title": title,
+                "link_to": link_to,
                 "html": get_dab_html(dab_num, self.dab_html[title]),
             }
             self.dab_list.append(dab)

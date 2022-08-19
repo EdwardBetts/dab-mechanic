@@ -63,6 +63,7 @@ a.new { color: red; }
     {% for dab in article.dab_list %}
     <div class="card p-1 m-2">
       <h3 class="card-title" id="dab-card-title-{{ dab.num }}" onclick="return jump_to({{ dab.num }})">{{ dab.title }}</h3>
+      {% if dab.title != dab.link_to %}<div>redirect from {{ dab.link_to }}</div>{% endif %}
     <div>
       <a href="#" onclick="return jump_to({{ dab.num }})">highlight link</a>
       <span class="d-none" id="cancel-{{ dab.num }}">
@@ -87,7 +88,25 @@ a.new { color: red; }
   var dab_lookup = {{ article.dab_lookup | tojson }};
   var dab_order = {{ article.dab_order | tojson }};
 
+  var dab_links = document.getElementsByClassName("disambig");
+  for(var i=0; i<dab_links.length; i++) {
+      dab_links[i].addEventListener("click", (event) => {
+          event.preventDefault();
+          var dab_num = event.target.id.substring(4);
+          open_dab(dab_num);
+      });
+  }
+
   function jump_to(dab_num) {
+    open_dab(dab_num);
+
+    var link = document.getElementById("dab-" + dab_num);
+    link.scrollIntoView();
+    link.classList.add("disambig-highlight")
+    return false;
+  }
+
+  function open_dab(dab_num) {
     var highlight_title = "text-bg-primary";
 
     var dab_articles = document.getElementsByClassName("dab-article");
@@ -112,9 +131,7 @@ a.new { color: red; }
     card_title.classList.add(highlight_title);
 
     var link = document.getElementById("dab-" + dab_num);
-    link.scrollIntoView();
     link.classList.add("disambig-highlight")
-    return false;
   }
 
   function clear_dab_highlight(dab_num) {
