@@ -54,7 +54,7 @@ a.new { color: red; }
     <h1>{{ article.enwiki }}</h1>
     <div id="save-panel" class="d-none">
     <form method="POST" action="{{ article.save_endpoint() }}">
-      <button class="btn btn-primary" id="save-btn">Save</button>
+      <button class="btn btn-primary" id="save-btn">Preview before save</button>
       <span id="edit-count"></span>
       <input type="hidden" value="{}" id="save-edits" name="edits">
     </form>
@@ -62,8 +62,9 @@ a.new { color: red; }
     <div>There are {{ article.dab_list | count }} links in the article that need disambiguating.</div>
     {% for dab in article.dab_list %}
     <div class="card p-1 m-2">
-      <h3 class="card-title" id="dab-card-title-{{ dab.num }}" onclick="return jump_to({{ dab.num }})">{{ dab.title }}</h3>
-      {% if dab.title != dab.link_to %}<div>redirect from {{ dab.link_to }}</div>{% endif %}
+      <div class="card-body">
+        <h3 class="card-title" id="dab-card-title-{{ dab.num }}" onclick="return jump_to({{ dab.num }})">{{ dab.title }}</h3>
+        {% if dab.title != dab.link_to %}<div>redirect from {{ dab.link_to }}</div>{% endif %}
     <div>
       <a href="#" onclick="return jump_to({{ dab.num }})">highlight link</a>
       <span class="d-none" id="cancel-{{ dab.num }}">
@@ -72,6 +73,7 @@ a.new { color: red; }
       </span>
     </div>
     <div class="dab-article d-none" id="dab-article-{{ dab.num }}">{{ dab.html | safe }}</div>
+    </div>
     </div>
     {% endfor %}
   </div>
@@ -85,8 +87,8 @@ a.new { color: red; }
 
   var edit_set = new Set();
   var edits = {};
-  var dab_lookup = {{ article.dab_lookup | tojson }};
   var dab_order = {{ article.dab_order | tojson }};
+  var dab_link_to = {{ article.dab_link_to() | tojson }};
 
   var dab_links = document.getElementsByClassName("disambig");
   for(var i=0; i<dab_links.length; i++) {
@@ -156,7 +158,8 @@ a.new { color: red; }
   }
 
   function update_edits() {
-    var saves = dab_order.filter(t => edits[t]).map(t => [t, edits[t]]);
+    var saves = dab_link_to.map((link_to, num) => (
+        {"num": num, "link_to": link_to, "title": edits[num]}));
     var save_edits = document.getElementById("save-edits");
     save_edits.value = JSON.stringify(saves);
   }
@@ -166,7 +169,7 @@ a.new { color: red; }
     document.getElementById("cancel-" + dab_num).classList.remove("d-none");
 
     var title = element.getAttribute("title");
-    edits[dab_lookup[dab_num]] = title;
+    edits[dab_num] = title;
 
     edit_set.add(dab_num);
     update_edits();
@@ -188,7 +191,7 @@ a.new { color: red; }
   }
 
   function cancel_selection(dab_num) {
-    delete edits[dab_lookup[dab_num]];
+    delete edits[dab_num];
     document.getElementById("cancel-" + dab_num).classList.add("d-none");
     clear_dab_highlight(dab_num);
     edit_set.delete(dab_num);

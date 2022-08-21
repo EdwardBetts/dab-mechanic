@@ -3,7 +3,8 @@
 import inspect
 import json
 import re
-from typing import Optional
+from typing import Optional, TypedDict
+import mwparserfromhell
 
 import flask
 import lxml.html
@@ -73,19 +74,22 @@ def index():
     return flask.render_template("index.html", articles=articles)
 
 
-def make_disamb_link(edit: tuple[str, str]) -> str:
-    """Given an edit return the appropriate link."""
-    return f"[[{edit[1]}|{edit[0]}]]"
+class Edit(TypedDict):
+    """Edit to an article."""
+
+    num: int
+    link_to: str
+    title: str
 
 
-def apply_edits(article_text: str, edits: list[tuple[str, str]]) -> str:
+def apply_edits(article_text: str, edits: list[Edit]) -> str:
     """Apply edits to article text."""
 
     def escape(s: str) -> str:
         return re.escape(s).replace("_", "[ _]").replace(r"\ ", "[ _]")
 
-    for link_from, link_to in edits:
-        print(rf"\[\[{escape(link_from)}\]\]")
+    for edit in edits:
+        # print(rf"\[\[{escape(link_from)}\]\]")
         article_text = re.sub(
             rf"\[\[{escape(link_from)}\]\]",
             f"[[{link_to}|{link_from}]]",
@@ -95,31 +99,61 @@ def apply_edits(article_text: str, edits: list[tuple[str, str]]) -> str:
     return article_text
 
 
-@app.route("/save/<path:enwiki>", methods=["POST"])
-def save(enwiki: str) -> Response | str:
-    """Save edits to article."""
-    edits = [
-        (link_to, link_from)
-        for link_to, link_from in json.loads(flask.request.form["edits"])
-    ]
+def make_disamb_link(edit: Edit) -> str:
+    """Given an edit return the appropriate link."""
+    return f"[[{edit['title']}|{edit['link_to']}]]"
 
-    enwiki = enwiki.replace("_", " ")
+
+def build_edit_summary(edits: list[Edit]) -> str:
+    """Given a list of edits return an edit summary."""
     titles = ", ".join(make_disamb_link(edit) for edit in edits[:-1])
     if len(titles) > 1:
         titles += " and "
 
     titles += make_disamb_link(edits[-1])
 
-    edit_summary = f"Disambiguate {titles} using [[User:Edward/Dab mechanic]]"
+    return f"Disambiguate {titles} using [[User:Edward/Dab mechanic]]"
 
-    article_text = apply_edits(mediawiki_api.get_content(enwiki), edits)
+def get_links(wikicode, edits):
+    dab_titles = {dab["link_to"] for dab in edits}
+    return [
+        link for link in wikicode.filter_wikilinks() if str(link.title) in dab_titles
+    ]
+
+
+@app.route("/preview/<path:enwiki>", methods=["POST"])
+def preview(enwiki: str) -> Response | str:
+    """Save edits to article."""
+    enwiki = enwiki.replace("_", " ")
+
+    dab_links = json.loads(flask.request.form["edits"])
+    edits = [edit for edit in dab_links if edit.get("title")]
+
+    edit_summary = build_edit_summary(edits)
+    # return flask.jsonify(edits=dab_links, edit_summary=edit_summary)
+
+    text = mediawiki_api.get_content(enwiki)
+    wikicode = mwparserfromhell.parse(text)
+    links = get_links(wikicode, dab_links)
+    assert len(links) == len(dab_links)
+
+    for wikilink, edit in zip(links, dab_links):
+        print(edit, wikilink)
+        if not edit.get("title"):
+            continue
+        if not wikilink.text:
+            wikilink.text = wikilink.title
+        wikilink.title = edit["title"]
+
+    diff = mediawiki_api.compare(enwiki, str(wikicode))
 
     return flask.render_template(
-        "save.html",
+        "peview.html",
         edit_summary=edit_summary,
         title=enwiki,
-        edits=edits,
-        text=article_text,
+        edits=dab_links,
+        # text=str(wikicode),
+        diff=diff,
     )
 
 

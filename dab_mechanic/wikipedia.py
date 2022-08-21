@@ -186,6 +186,9 @@ class Article:
             a.set("href", "https://en.wikipedia.org" + href)
             a.set("target", "_blank")
 
+    def dab_link_to(self):
+        return [dab["link_to"] for dab in self.dab_list]
+
     def process_links(self) -> None:
         """Process links in parsed wikitext."""
         for dab_num, (a, link_to, title) in enumerate(self.iter_links()):
