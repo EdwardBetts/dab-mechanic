@@ -43,3 +43,18 @@ def get_content(title: str) -> str:
     data = call(params)
     rev: str = data["query"]["pages"][0]["revisions"][0]["content"]
     return rev
+
+
+def compare(title: str, new_text: str) -> str:
+    """Generate a diff for the new article text."""
+    params: dict[str, str | int] = {
+        "format": "json",
+        "formatversion": 2,
+        "action": "compare",
+        "fromtitle": title,
+        "toslots": "main",
+        "totext-main": new_text,
+        "prop": "diff",
+    }
+    diff: str = call(params)["compare"]["body"]
+    return diff
