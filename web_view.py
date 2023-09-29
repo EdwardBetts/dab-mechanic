@@ -3,16 +3,17 @@
 import inspect
 import json
 import re
+import sys
+import traceback
 from typing import Optional, TypedDict
-import mwparserfromhell
-from pprint import pprint
 
 import flask
 import lxml.html
+import mwparserfromhell
 import requests
 import werkzeug.exceptions
 from requests_oauthlib import OAuth1Session
-from werkzeug.debug.tbtools import get_current_traceback
+from werkzeug.debug.tbtools import DebugTraceback
 from werkzeug.wrappers import Response
 
 from dab_mechanic import mediawiki_api, wikidata_oauth, wikipedia
@@ -28,20 +29,31 @@ awdl_url = "https://dplbot.toolforge.org/articles_with_dab_links.php"
 
 
 @app.before_request
-def global_user():
+def global_user() -> None:
     """Make username available everywhere."""
     flask.g.user = wikidata_oauth.get_username()
 
 
 @app.errorhandler(werkzeug.exceptions.InternalServerError)
-def exception_handler(e):
-    tb = get_current_traceback()
-    last_frame = next(frame for frame in reversed(tb.frames) if not frame.is_library)
-    last_frame_args = inspect.getargs(last_frame.code)
+def exception_handler(e: werkzeug.exceptions.InternalServerError) -> tuple[str, int]:
+    """Handle exception."""
+    exec_type, exc_value, current_traceback = sys.exc_info()
+    assert exc_value
+    tb = DebugTraceback(exc_value)
+
+    summary = tb.render_traceback_html(include_title=False)
+    exc_lines = "".join(tb._te.format_exception_only())
+
+    last_frame = list(traceback.walk_tb(current_traceback))[-1][0]
+    last_frame_args = inspect.getargs(last_frame.f_code)
+
     return (
         flask.render_template(
             "show_error.html",
-            tb=tb,
+            plaintext=tb.render_traceback_text(),
+            exception=exc_lines,
+            exception_type=tb._te.exc_type.__name__,
+            summary=summary,
             last_frame=last_frame,
             last_frame_args=last_frame_args,
         ),
@@ -49,14 +61,15 @@ def exception_handler(e):
     )
 
 
-def parse_articles_with_dab_links(root: lxml.html.Element) -> list[tuple[str, int]]:
+def parse_articles_with_dab_links(root: lxml.html.HtmlElement) -> list[tuple[str, int]]:
     """Parse Articles With Multiple Dablinks."""
     articles = []
     table = root.find(".//table")
+    assert table is not None
     for tr in table:
         title = tr[0][0].text
         count_text = tr[1][0].text
-        assert count_text.endswith(" links")
+        assert title and count_text and count_text.endswith(" links")
         count = int(count_text[:-6])
 
         articles.append((title, count))
@@ -65,7 +78,8 @@ def parse_articles_with_dab_links(root: lxml.html.Element) -> list[tuple[str, in
 
 
 @app.route("/")
-def index():
+def index() -> str | Response:
+    """Index page."""
     title = flask.request.args.get("title")
     exists = None
     if title:
@@ -83,7 +97,10 @@ def index():
     # articles = [line[:-1] for line in open("article_list")]
 
     return flask.render_template(
-        "index.html", title=title, exists=exists, articles=articles,
+        "index.html",
+        title=title,
+        exists=exists,
+        articles=articles,
     )
 
 
@@ -215,17 +232,17 @@ def save(enwiki: str) -> Response | str:
 
 def redirect_if_needed(enwiki: str) -> Optional[Response]:
     """Check if there are spaces in the article name and redirect."""
+    endpoint = flask.request.endpoint
+    assert endpoint
     return (
-        flask.redirect(
-            flask.url_for(flask.request.endpoint, enwiki=enwiki.replace(" ", "_"))
-        )
+        flask.redirect(flask.url_for(endpoint, enwiki=enwiki.replace(" ", "_")))
         if " " in enwiki
         else None
     )
 
 
 @app.route("/enwiki/<path:enwiki>")
-def article_page(enwiki: str) -> Response:
+def article_page(enwiki: str) -> Response | str:
     """Article Page."""
     redirect = redirect_if_needed(enwiki)
     if redirect:
@@ -244,7 +261,8 @@ def article_page(enwiki: str) -> Response:
 
 
 @app.route("/oauth/start")
-def start_oauth():
+def start_oauth() -> Response:
+    """Start OAuth."""
     next_page = flask.request.args.get("next")
     if next_page:
         flask.session["after_login"] = next_page
@@ -267,7 +285,8 @@ def start_oauth():
 
 
 @app.route("/oauth/callback", methods=["GET"])
-def oauth_callback():
+def oauth_callback() -> Response:
+    """Autentication callback."""
     client_key = app.config["CLIENT_KEY"]
     client_secret = app.config["CLIENT_SECRET"]
 
@@ -294,11 +313,12 @@ def oauth_callback():
     flask.session["owner_secret"] = oauth_tokens.get("oauth_token_secret")
 
     next_page = flask.session.get("after_login")
-    return flask.redirect(next_page) if next_page else flask.url_for("index")
+    return flask.redirect(next_page if next_page else flask.url_for("index"))
 
 
 @app.route("/oauth/disconnect")
-def oauth_disconnect():
+def oauth_disconnect() -> Response:
+    """Disconnect OAuth."""
     for key in "owner_key", "owner_secret", "username", "after_login":
         if key in flask.session:
             del flask.session[key]
