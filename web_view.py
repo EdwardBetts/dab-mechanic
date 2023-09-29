@@ -3,6 +3,8 @@
 import inspect
 import json
 import re
+import sys
+import traceback
 from typing import Optional
 
 import flask
@@ -10,7 +12,7 @@ import lxml.html
 import requests
 import werkzeug.exceptions
 from requests_oauthlib import OAuth1Session
-from werkzeug.debug.tbtools import get_current_traceback
+from werkzeug.debug.tbtools import DebugTraceback
 from werkzeug.wrappers import Response
 
 from dab_mechanic import mediawiki_api, wikidata_oauth, wikipedia
@@ -32,14 +34,25 @@ def global_user() -> None:
 
 
 @app.errorhandler(werkzeug.exceptions.InternalServerError)
-def exception_handler(e):
-    tb = get_current_traceback()
-    last_frame = next(frame for frame in reversed(tb.frames) if not frame.is_library)
-    last_frame_args = inspect.getargs(last_frame.code)
+def exception_handler(e: werkzeug.exceptions.InternalServerError) -> tuple[str, int]:
+    """Handle exception."""
+    exec_type, exc_value, current_traceback = sys.exc_info()
+    assert exc_value
+    tb = DebugTraceback(exc_value)
+
+    summary = tb.render_traceback_html(include_title=False)
+    exc_lines = "".join(tb._te.format_exception_only())
+
+    last_frame = list(traceback.walk_tb(current_traceback))[-1][0]
+    last_frame_args = inspect.getargs(last_frame.f_code)
+
     return (
         flask.render_template(
             "show_error.html",
-            tb=tb,
+            plaintext=tb.render_traceback_text(),
+            exception=exc_lines,
+            exception_type=tb._te.exc_type.__name__,
+            summary=summary,
             last_frame=last_frame,
             last_frame_args=last_frame_args,
         ),
