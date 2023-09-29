@@ -34,13 +34,13 @@ authentication features.
 1. Clone this repository to your local machine:
 
    ```
-   git clone https://github.com/yourusername/wikipedia-disambiguation-fixer.git
+   git clone https://git.4angle.com/edward/dab-mechanic.git
    ```
 
 2. Navigate to the project directory:
 
    ```
-   cd wikipedia-disambiguation-fixer
+   cd dab-mechanic
    ```
 
 3. Install the required Python packages using pip:
