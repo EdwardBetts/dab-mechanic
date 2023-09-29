@@ -30,19 +30,32 @@ def call(params: dict[str, str | int]) -> dict[str, Any]:
     return data.json()
 
 
-def get_content(title: str) -> str:
+def article_exists(title: str) -> bool:
+    """Get article text."""
+    params: dict[str, str | int] = {
+        "action": "query",
+        "format": "json",
+        "formatversion": 2,
+        "titles": title,
+    }
+    return not call(params)["query"]["pages"][0].get("missing")
+
+
+def get_content(title: str) -> tuple[str, int]:
     """Get article text."""
     params: dict[str, str | int] = {
         "action": "query",
         "format": "json",
         "formatversion": 2,
         "prop": "revisions|info",
-        "rvprop": "content|timestamp",
+        "rvprop": "content|timestamp|ids",
         "titles": title,
     }
     data = call(params)
-    rev: str = data["query"]["pages"][0]["revisions"][0]["content"]
-    return rev
+    rev = data["query"]["pages"][0]["revisions"][0]
+    content: str = rev["content"]
+    revid: int = int(rev["revid"])
+    return content, revid
 
 
 def compare(title: str, new_text: str) -> str:
@@ -58,3 +71,21 @@ def compare(title: str, new_text: str) -> str:
     }
     diff: str = call(params)["compare"]["body"]
     return diff
+
+
+def edit_page(
+    title: str, text: str, summary: str, baserevid: str, token: str
+) -> dict[str, str | int]:
+    """Edit a page on Wikipedia."""
+    params: dict[str, str | int] = {
+        "format": "json",
+        "formatversion": 2,
+        "action": "edit",
+        "title": title,
+        "text": text,
+        "baserevid": baserevid,
+        "token": token,
+        "summary": summary,
+    }
+    edit: str = call(params)["edit"]
+    return edit

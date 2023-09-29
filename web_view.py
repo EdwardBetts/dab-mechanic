@@ -5,6 +5,7 @@ import json
 import re
 from typing import Optional, TypedDict
 import mwparserfromhell
+from pprint import pprint
 
 import flask
 import lxml.html
@@ -65,13 +66,25 @@ def parse_articles_with_dab_links(root: lxml.html.Element) -> list[tuple[str, in
 
 @app.route("/")
 def index():
+    title = flask.request.args.get("title")
+    exists = None
+    if title:
+        title = title.strip()
+        exists = mediawiki_api.article_exists(title)
+        if exists:
+            return flask.redirect(
+                flask.url_for("article_page", enwiki=title.replace(" ", "_"))
+            )
+
     r = requests.get(awdl_url, params={"limit": 100})
     root = lxml.html.fromstring(r.content)
     articles = parse_articles_with_dab_links(root)
 
     # articles = [line[:-1] for line in open("article_list")]
 
-    return flask.render_template("index.html", articles=articles)
+    return flask.render_template(
+        "index.html", title=title, exists=exists, articles=articles,
+    )
 
 
 class Edit(TypedDict):
@@ -82,7 +95,7 @@ class Edit(TypedDict):
     title: str
 
 
-def apply_edits(article_text: str, edits: list[Edit]) -> str:
+def old_apply_edits(article_text: str, edits: list[Edit]) -> str:
     """Apply edits to article text."""
 
     def escape(s: str) -> str:
@@ -114,47 +127,90 @@ def build_edit_summary(edits: list[Edit]) -> str:
 
     return f"Disambiguate {titles} using [[User:Edward/Dab mechanic]]"
 
-def get_links(wikicode, edits):
+
+def get_links(wikicode, dab_links):
+    edits = [edit for edit in dab_links if edit.get("title")]
+
     dab_titles = {dab["link_to"] for dab in edits}
     return [
         link for link in wikicode.filter_wikilinks() if str(link.title) in dab_titles
     ]
 
 
-@app.route("/preview/<path:enwiki>", methods=["POST"])
-def preview(enwiki: str) -> Response | str:
-    """Save edits to article."""
-    enwiki = enwiki.replace("_", " ")
-
-    dab_links = json.loads(flask.request.form["edits"])
-    edits = [edit for edit in dab_links if edit.get("title")]
-
-    edit_summary = build_edit_summary(edits)
-    # return flask.jsonify(edits=dab_links, edit_summary=edit_summary)
-
-    text = mediawiki_api.get_content(enwiki)
+def apply_edits(text, dab_links):
     wikicode = mwparserfromhell.parse(text)
     links = get_links(wikicode, dab_links)
+    if len(links) != len(dab_links):
+        print("links:", len(links))
+        print("dab_links:", len(dab_links))
+        print("dab_links:", dab_links)
     assert len(links) == len(dab_links)
 
     for wikilink, edit in zip(links, dab_links):
-        print(edit, wikilink)
         if not edit.get("title"):
             continue
         if not wikilink.text:
             wikilink.text = wikilink.title
         wikilink.title = edit["title"]
 
-    diff = mediawiki_api.compare(enwiki, str(wikicode))
+    return str(wikicode)
+
+
+@app.route("/preview/<path:enwiki>", methods=["POST"])
+def preview(enwiki: str) -> Response | str:
+    """Preview article edits."""
+    enwiki = enwiki.replace("_", " ")
+
+    dab_links = json.loads(flask.request.form["edits"])
+    dab_links = [link for link in dab_links if "title" in link]
+    cur_text, baserevid = mediawiki_api.get_content(enwiki)
+
+    text = apply_edits(cur_text, dab_links)
+    diff = mediawiki_api.compare(enwiki, text)
 
     return flask.render_template(
-        "peview.html",
-        edit_summary=edit_summary,
+        "preview.html",
+        edit_summary=build_edit_summary(dab_links),
         title=enwiki,
         edits=dab_links,
-        # text=str(wikicode),
         diff=diff,
     )
+
+
+def do_save(enwiki: str):
+    """Update page on Wikipedia."""
+    dab_links = json.loads(flask.request.form["edits"])
+    dab_links = [link for link in dab_links if "title" in link]
+
+    cur_text, baserevid = mediawiki_api.get_content(enwiki)
+
+    new_text = apply_edits(cur_text, dab_links)
+    token = wikidata_oauth.get_token()
+
+    summary = build_edit_summary(dab_links)
+    print(summary)
+
+    edit = mediawiki_api.edit_page(
+        title=enwiki,
+        text=new_text,
+        summary=summary,
+        baserevid=baserevid,
+        token=token,
+    )
+
+    return edit
+
+
+@app.route("/save/<path:enwiki>", methods=["GET", "POST"])
+def save(enwiki: str) -> Response | str:
+    """Save edits to article."""
+    enwiki_norm = enwiki.replace("_", " ")
+
+    if flask.request.method == "GET":
+        return flask.render_template("edit_saved.html", title=enwiki_norm)
+
+    do_save(enwiki_norm)
+    return flask.redirect(flask.url_for(flask.request.endpoint, enwiki=enwiki))
 
 
 def redirect_if_needed(enwiki: str) -> Optional[Response]:
@@ -174,6 +230,9 @@ def article_page(enwiki: str) -> Response:
     redirect = redirect_if_needed(enwiki)
     if redirect:
         return redirect
+
+    if "owner_key" not in flask.session:
+        return flask.render_template("login_needed.html")
 
     article = wikipedia.Article(enwiki)
     article.load()

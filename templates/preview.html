@@ -30,7 +30,10 @@
   </tbody>
 </table>
 
+    <form method="POST" action="{{ url_for("save", enwiki=title) }}">
       <button class="btn btn-primary" id="save-btn">Save changes</button>
+      <input type="hidden" value="{{ request.form.edits }}" id="save-edits" name="edits">
+    </form>
 
 </body>
 </html>

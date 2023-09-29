@@ -1,7 +1,21 @@
 {% extends "base.html" %}
 
+{% block title %}DAB Mechanic{% endblock %}
+
 {% block content %}
 <div class="m-3">
+
+  <form>
+    article title:
+    <input name="title" value="{{ request.args.get("title", "") }}">
+    <button class="btn btn-sm btn-primary">go</button>
+  </form>
+
+  {% if title and not exists %}
+  <p>No article titled "{{ title }}" found in Wikipedia.</p>
+  {% endif %}
+
+
   <ol>
     {% for enwiki, count in articles %}
     <li>

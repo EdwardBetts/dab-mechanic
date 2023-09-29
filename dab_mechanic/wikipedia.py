@@ -163,9 +163,9 @@ class Article:
         self.parse: Optional[dict[str, Any]] = None
         self.dab_html: dict[str, str] = {}
 
-    def save_endpoint(self) -> str:
+    def preview_endpoint(self) -> str:
         """Endpoint for saving changes."""
-        href: str = flask.url_for("save", enwiki=self.enwiki.replace(" ", "_"))
+        href: str = flask.url_for("preview", enwiki=self.enwiki.replace(" ", "_"))
         return href
 
     def load(self) -> None:
