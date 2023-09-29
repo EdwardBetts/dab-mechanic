@@ -26,7 +26,7 @@ awdl_url = "https://dplbot.toolforge.org/articles_with_dab_links.php"
 
 
 @app.before_request
-def global_user():
+def global_user() -> None:
     """Make username available everywhere."""
     flask.g.user = wikidata_oauth.get_username()
 
@@ -47,14 +47,15 @@ def exception_handler(e):
     )
 
 
-def parse_articles_with_dab_links(root: lxml.html.Element) -> list[tuple[str, int]]:
+def parse_articles_with_dab_links(root: lxml.html.HtmlElement) -> list[tuple[str, int]]:
     """Parse Articles With Multiple Dablinks."""
     articles = []
     table = root.find(".//table")
+    assert table is not None
     for tr in table:
         title = tr[0][0].text
         count_text = tr[1][0].text
-        assert count_text.endswith(" links")
+        assert title and count_text and count_text.endswith(" links")
         count = int(count_text[:-6])
 
         articles.append((title, count))
@@ -63,7 +64,8 @@ def parse_articles_with_dab_links(root: lxml.html.Element) -> list[tuple[str, in
 
 
 @app.route("/")
-def index():
+def index() -> str:
+    """Index page."""
     r = requests.get(awdl_url, params={"limit": 100})
     root = lxml.html.fromstring(r.content)
     articles = parse_articles_with_dab_links(root)
@@ -125,17 +127,17 @@ def save(enwiki: str) -> Response | str:
 
 def redirect_if_needed(enwiki: str) -> Optional[Response]:
     """Check if there are spaces in the article name and redirect."""
+    endpoint = flask.request.endpoint
+    assert endpoint
     return (
-        flask.redirect(
-            flask.url_for(flask.request.endpoint, enwiki=enwiki.replace(" ", "_"))
-        )
+        flask.redirect(flask.url_for(endpoint, enwiki=enwiki.replace(" ", "_")))
         if " " in enwiki
         else None
     )
 
 
 @app.route("/enwiki/<path:enwiki>")
-def article_page(enwiki: str) -> Response:
+def article_page(enwiki: str) -> Response | str:
     """Article Page."""
     redirect = redirect_if_needed(enwiki)
     if redirect:
@@ -151,7 +153,8 @@ def article_page(enwiki: str) -> Response:
 
 
 @app.route("/oauth/start")
-def start_oauth():
+def start_oauth() -> Response:
+    """Start OAuth."""
     next_page = flask.request.args.get("next")
     if next_page:
         flask.session["after_login"] = next_page
@@ -174,7 +177,8 @@ def start_oauth():
 
 
 @app.route("/oauth/callback", methods=["GET"])
-def oauth_callback():
+def oauth_callback() -> Response:
+    """Autentication callback."""
     client_key = app.config["CLIENT_KEY"]
     client_secret = app.config["CLIENT_SECRET"]
 
@@ -201,11 +205,12 @@ def oauth_callback():
     flask.session["owner_secret"] = oauth_tokens.get("oauth_token_secret")
 
     next_page = flask.session.get("after_login")
-    return flask.redirect(next_page) if next_page else flask.url_for("index")
+    return flask.redirect(next_page if next_page else flask.url_for("index"))
 
 
 @app.route("/oauth/disconnect")
-def oauth_disconnect():
+def oauth_disconnect() -> Response:
+    """Disconnect OAuth."""
     for key in "owner_key", "owner_secret", "username", "after_login":
         if key in flask.session:
             del flask.session[key]
